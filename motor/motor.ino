@@ -32,6 +32,13 @@ const int T_int = 50; // Integration period in ms
 sensors_event_t a, g, temp;
 Adafruit_MPU6050 mpu;
 
+// PID Parameters
+double KP = 0.0; // Gains -tune later
+float KI = 0.0; 
+float KD = 0.0;
+float setpoint = 0; // 0 degrees?
+float output = PID(setpoint,KP,KI,KD);
+
 void setup() {
   // setup pins
   pinMode(PWM, OUTPUT);
@@ -81,6 +88,10 @@ void loop() {
     // Serial.print(beta);
     // time = millis();
   // }
+
+  float PID(float setpoint, float KP, float KI, float KD){
+    return output;
+  }
 
   // set motor speed using the filtered output
   // TODO: implement PID control
