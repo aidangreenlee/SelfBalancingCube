@@ -3,8 +3,8 @@
 #define PWM 13
 #define AIN2 11
 #define AIN1 9
-#define OUTA 2
-#define OUTB 3
+#define OUTA 3 //encoder A
+#define OUTB 2 //encoder B
 #define POT A15
 #define ALPHA_POT A8
 #define BETA_POT A9
@@ -40,11 +40,13 @@ sensors_event_t a, g, temp;
 Adafruit_MPU6050 mpu;
 
 // PID Parameters
-double KP = 0.0; // Gains -tune later
-float KI = 0.0; 
-float KD = 0.0;
-float setpoint = 0; // 0 degrees?
-float output = PID(setpoint,KP,KI,KD);
+double KP = 10000; // Gains -tune later
+float KI = 0.001; 
+float KD = .1;
+float setpoint = -0.49; // 0 degrees?
+float integral = 0;
+
+int encoder_count = 1;
 
 void setup() {
   // setup pins
@@ -69,6 +71,10 @@ void setup() {
 
   calibrateSensors();
 
+
+  //could  use encoder to correct for imu drift as a feedback mechanism
+  attachInterrupt(digitalPinToInterrupt(OUTA),encoder_func,RISING);
+
 }
 
 void loop() {
@@ -82,11 +88,39 @@ void loop() {
   beta = log10(9.0 * (betaValue / 1023.0) + 1.0);
 
   getAngles();
+
+  // Serial.print(alphaValue);
+  // Serial.print(",");
+  // Serial.println(theta_k[0]);
+
+ 
+
+   // Calculate PID output
+  float error = setpoint - theta_k[1]; // Calculate error between setpoint and pitch
+  //Serial.println(error); 
+  float previousError = error; // Save error for next iteration
+  integral += error * T_int; // Update integral
+ // integral = constrain(integral,-100,100);
+  float derivative = (error - previousError) / T_int; // Calculate derivative
+  float output = KP * error + KI * integral + KD * derivative; // Calculate PID output
+
+  
+
+  // set motor speed using the PID output
+  speed = constrain(output, -255, 255); // Ensure speed is within limits
+  Serial.println("output"); 
+  Serial.println(theta_k[0]); 
+
+
+  motorControl(speed, PWM);
+
+
+
   // set motor speed using the filtered output
   // TODO: implement PID control
-  speed = round(theta_k[0] / (pi / 4) * 255.0);
-  speed = constrain(speed, -255, 255);
-  motorControl(speed, PWM);
+  // speed = round(theta_k[0] / (pi / 4) * 255.0);
+  // speed = constrain(speed, -255, 255);
+  // motorControl(speed, PWM);
 
   // Serial.println(" ");
 }
@@ -126,10 +160,10 @@ void setMode(int mode) {
       digitalWrite(AIN1, HIGH);
       digitalWrite(AIN2, LOW);
       break;
-    case stop:
-      digitalWrite(AIN1, LOW);
-      digitalWrite(AIN2, LOW);
-      break;
+    // case stop:
+    //   digitalWrite(AIN1, LOW);
+    //   digitalWrite(AIN2, LOW);
+    //   break;
   }
 }
 
@@ -197,13 +231,14 @@ void alphaBetaFilter(float xm, float vm, float *xk, float *vk) {
 void alphaFilter(float xm, float *xk) {
   float rk = xm - *xk;
   *xk = *xk + alpha * rk;
-  // Serial.print(*xk * 180 / pi);
+  //Serial.println(*xk * 180 / pi);
 }
 
 void motorControl(int speed, int motorPIN) {
   if (abs(speed) < 10){
     setMode(stop);
-  } else if (speed < 0) {
+  }
+    if (speed < 0) {
     setMode(CCW);
     speed = -speed;
   } else {
@@ -211,4 +246,19 @@ void motorControl(int speed, int motorPIN) {
   }
 
   analogWrite(motorPIN, speed > 255 ? 255 : speed);
+}
+
+
+void encoder_func() {
+
+//If encoder A > encoder B, increment. 
+//This function is called on rising edge of A, so increment rising and decrement falling
+
+if (digitalRead(OUTA) > digitalRead(OUTB)) { 
+  encoder_count++;
+}
+else{
+    encoder_count--;
+  }
+
 }
