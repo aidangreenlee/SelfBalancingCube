@@ -31,7 +31,7 @@ struct calibrate Calibration;
 // Position and velocity are both assumed to be zero initially
 float theta_k[2] = { 0, 0 };
 float theta_dot_k[2] = { 0, 0 };
-float alpha = .1;
+float alpha = .2;
 float beta = .1;
 const int T_int = 50;  // Integration period in ms
 
@@ -40,10 +40,10 @@ sensors_event_t a, g, temp;
 Adafruit_MPU6050 mpu;
 
 // PID Parameters
-double KP = 10000; // Gains -tune later
-float KI = 0.001; 
-float KD = .1;
-float setpoint = -0.49; // 0 degrees?
+double KP = 500; // Gains -tune later
+float KI = 0; 
+float KD = 0;
+float setpoint = 0; // 0 degrees?
 float integral = 0;
 
 int encoder_count = 1;
@@ -84,32 +84,32 @@ void loop() {
   betaValue = analogRead(BETA_POT);
 
   // remap alpha/beta tuning potentiometers
-  alpha = log10(9.0 * (alphaValue / 1023.0) + 1.0);
+  // alpha = log10(9.0 * (alphaValue / 1023.0) + 1.0);
   beta = log10(9.0 * (betaValue / 1023.0) + 1.0);
 
   getAngles();
-
-  // Serial.print(alphaValue);
-  // Serial.print(",");
-  // Serial.println(theta_k[0]);
-
  
 
    // Calculate PID output
   float error = setpoint - theta_k[1]; // Calculate error between setpoint and pitch
   //Serial.println(error); 
   float previousError = error; // Save error for next iteration
-  integral += error * T_int; // Update integral
+  // integral += error * T_int; // Update integral
  // integral = constrain(integral,-100,100);
-  float derivative = (error - previousError) / T_int; // Calculate derivative
+  // float derivative = (error - previousError) / T_int; // Calculate derivative
+  float derivative = g.gyro.y;
   float output = KP * error + KI * integral + KD * derivative; // Calculate PID output
-
+  // Serial.print(output);
   
 
   // set motor speed using the PID output
   speed = constrain(output, -255, 255); // Ensure speed is within limits
-  Serial.println("output"); 
-  Serial.println(theta_k[0]); 
+  // Serial.print("-2 2 ");
+  // Serial.print(alpha);
+  // Serial.print(" ");
+  // Serial.print(theta_k[0]);
+  // Serial.print(" ");
+  // Serial.println(theta_k[1]); 
 
 
   motorControl(speed, PWM);
@@ -187,7 +187,6 @@ void calibrateSensors() {
     gyro[2] += g.gyro.z;
     c++;
   }
-  Serial.println("Done Calibrating");
 
   // Set biases in Calibration struct
   Calibration.gyro.x = g.gyro.x/c;
@@ -196,6 +195,11 @@ void calibrateSensors() {
   Calibration.acceleration.x = a.acceleration.x/c;
   Calibration.acceleration.y = a.acceleration.y/c;
   Calibration.acceleration.z = a.acceleration.z/c;
+  
+  Serial.println("Done Calibrating");
+  Serial.print("Calibrated Roll = ");
+  Serial.println(Calibration.gyro.x);
+  delay(1000);
 }
 
 // return array of Euler angles
@@ -235,17 +239,18 @@ void alphaFilter(float xm, float *xk) {
 }
 
 void motorControl(int speed, int motorPIN) {
-  if (abs(speed) < 10){
-    setMode(stop);
-  }
+  // if (abs(speed) < 10){
+  //   setMode(stop);
+  // }
     if (speed < 0) {
-    setMode(CCW);
+    setMode(CW);
     speed = -speed;
   } else {
-    setMode(CW);
+    setMode(CCW);
   }
 
   analogWrite(motorPIN, speed > 255 ? 255 : speed);
+  Serial.println(speed);
 }
 
 
