@@ -5,17 +5,17 @@
 #define AIN1 9
 #define OUTA 3 //encoder A
 #define OUTB 2 //encoder B
-#define POT A15
-#define ALPHA_POT A8
-#define BETA_POT A9
+#define POT_KP A0
+#define POT_KI A1
+#define POT_KD A2
 
 // define physical constants
 const float pi = 3.14159265359;
 
 enum motorMode{shortBrake,CCW,CW,stop};
-int potValue = 0;
-int alphaValue = 0;
-int betaValue = 0;
+int kp_val = 0;
+int ki_val = 0;
+int kd_val = 0; 
 int speed = 0;
 int time = 0;
 
@@ -40,10 +40,10 @@ sensors_event_t a, g, temp;
 Adafruit_MPU6050 mpu;
 
 // PID Parameters
-double KP = 500; // Gains -tune later
+double KP = 1000; // Gains -tune later
 float KI = 0; 
 float KD = 0;
-float setpoint = 0; // 0 degrees?
+float setpoint = -0.835; // 0 degrees?
 float integral = 0;
 
 int encoder_count = 1;
@@ -55,9 +55,9 @@ void setup() {
   pinMode(AIN1, OUTPUT);
   pinMode(OUTA, INPUT);
   pinMode(OUTB, INPUT);
-  pinMode(POT, INPUT);
-  pinMode(ALPHA_POT, INPUT);
-  pinMode(BETA_POT, INPUT);
+  pinMode(POT_KP, INPUT);
+  pinMode(POT_KI, INPUT);
+  pinMode(POT_KD, INPUT);
   Serial.begin(115200);
 
   // Initialize IMU
@@ -79,13 +79,18 @@ void setup() {
 
 void loop() {
   // Read pin values
-  potValue = analogRead(POT);
-  alphaValue = analogRead(ALPHA_POT);
-  betaValue = analogRead(BETA_POT);
+  kp_val = analogRead(POT_KP);
+  ki_val = analogRead(POT_KI);
+  kd_val = analogRead(POT_KD);
+
+  KP = map(kp_val,0,1023,1,1000);
+  KI = map(ki_val,0,1023,0,5000);
+  KD = map(kd_val,0,1023,1,10000);
+
 
   // remap alpha/beta tuning potentiometers
   // alpha = log10(9.0 * (alphaValue / 1023.0) + 1.0);
-  beta = log10(9.0 * (betaValue / 1023.0) + 1.0);
+  //beta = log10(9.0 * (betaValue / 1023.0) + 1.0);
 
   getAngles();
  
@@ -99,8 +104,9 @@ void loop() {
   // float derivative = (error - previousError) / T_int; // Calculate derivative
   float derivative = g.gyro.y;
   float output = KP * error + KI * integral + KD * derivative; // Calculate PID output
-  // Serial.print(output);
-  
+  // Serial.println(output);
+  // Serial.print(theta_k[1]);
+
 
   // set motor speed using the PID output
   speed = constrain(output, -255, 255); // Ensure speed is within limits
@@ -209,8 +215,9 @@ void calibrateSensors() {
 float *getEulerAngles(sensors_vec_t a) {
   float *angles = malloc(sizeof(float) * 2);
   // angles[0]  = atan2( a.y, sqrt(a.x * a.x + a.z * a.z));
-  angles[0] = atan2(a.y, a.z);
-  angles[1] = atan2(-a.x, sqrt(a.x * a.x + a.z * a.z));
+  angles[0] = atan2(a.y, a.z); //pitch
+  //angles[1] = atan2(-a.x, sqrt(a.x * a.x + a.z * a.z)); //roll
+  angles[1] = atan2(a.x, a.z);
   return angles;
 }
 
@@ -242,6 +249,7 @@ void motorControl(int speed, int motorPIN) {
   // if (abs(speed) < 10){
   //   setMode(stop);
   // }
+
     if (speed < 0) {
     setMode(CW);
     speed = -speed;
@@ -250,7 +258,7 @@ void motorControl(int speed, int motorPIN) {
   }
 
   analogWrite(motorPIN, speed > 255 ? 255 : speed);
-  Serial.println(speed);
+  //Serial.println(speed);
 }
 
 
