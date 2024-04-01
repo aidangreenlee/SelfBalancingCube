@@ -29,8 +29,12 @@ struct calibrate Calibration;
 
 // Alpha-beta filter values
 // Position and velocity are both assumed to be zero initially
-float theta_k[2] = { 0, 0 };
-float theta_dot_k[2] = { 0, 0 };
+float roll = 0;
+float theta_roll;
+float pitch = 0;
+float theta_pitch;
+float roll_dot = 0;
+float pitch_dot = 0;
 float alpha = .2;
 float beta = .1;
 const int T_int = 50;  // Integration period in ms
@@ -45,6 +49,10 @@ float KI = 0;
 float KD = 0;
 float setpoint = -0.835; // 0 degrees?
 float integral = 0;
+float error = 0;
+float previousError = 0;
+float derivative = 0;
+float PIDout = 0;
 
 int encoder_count = 1;
 
@@ -96,59 +104,69 @@ void loop() {
  
 
    // Calculate PID output
-  float error = setpoint - theta_k[1]; // Calculate error between setpoint and pitch
+  error = setpoint - roll; // Calculate error between setpoint and pitch
+  if (abs(error) <= 0.087){ // set 5 degree dead zone for wheel to mitigate effects of gear backlash
+    error = 0;
+    speed = 0;
+    Serial.println("zero error");
+  }else{
   //Serial.println(error); 
-  float previousError = error; // Save error for next iteration
+  previousError = error; // Save error for next iteration
   // integral += error * T_int; // Update integral
  // integral = constrain(integral,-100,100);
   // float derivative = (error - previousError) / T_int; // Calculate derivative
-  float derivative = g.gyro.y;
-  float output = KP * error + KI * integral + KD * derivative; // Calculate PID output
-  // Serial.println(output);
-  // Serial.print(theta_k[1]);
-
+  derivative = g.gyro.y;
+  PIDout = KP * error + KI * integral + KD * derivative; // Calculate PID output
+  // Serial.print("error:");
+  // Serial.print(error);
+  // Serial.print(" KP:");
+  // Serial.print(KP);
+  // Serial.print(" output:");
+  // Serial.print(output);
 
   // set motor speed using the PID output
-  speed = constrain(output, -255, 255); // Ensure speed is within limits
+  speed = constrain(PIDout, -255, 255); // Ensure speed is within limits
+  // Serial.print(" speed:");
+  // Serial.print(speed);
   // Serial.print("-2 2 ");
   // Serial.print(alpha);
   // Serial.print(" ");
   // Serial.print(theta_k[0]);
   // Serial.print(" ");
   // Serial.println(theta_k[1]); 
-
+  }
 
   motorControl(speed, PWM);
 
 
 
-  // set motor speed using the filtered output
+  // set motor speed using the filtered output 
   // TODO: implement PID control
   // speed = round(theta_k[0] / (pi / 4) * 255.0);
   // speed = constrain(speed, -255, 255);
   // motorControl(speed, PWM);
 
   // Serial.println(" ");
+  // Serial.println("loop");
 }
 
 void getAngles(){
   // get imu data and calculate angles
   mpu.getEvent(&a, &g, &temp);
-  float *angles = getEulerAngles(a.acceleration);
+  getEulerAngles(a.acceleration);
   // Filter data
   //alphaBetaFilter(angles[0],g.gyro.pitch, &theta_k[0], &theta_dot_k[0]);
-  alphaFilter(angles[0], &theta_k[0]);
+  theta_roll = alphaFilter(roll, theta_roll);
   // Serial.print(" ");
   //alphaBetaFilter(angles[1],g.gyro.roll, &theta_k[1], &theta_dot_k[1]);
-  alphaFilter(angles[1], &theta_k[1]);
-
+  theta_pitch = alphaFilter(pitch, theta_pitch);
   // Serial.print(" ");
   // Serial.print(alpha);
   // Serial.print(" ");
   // Serial.print(beta);
-
+  // Serial.println(theta_roll);
   // free memory from Euler angle function
-  free(angles);
+  // Serial.println("getAngles");
 }
 
 // Function to set motor direction based on enum
@@ -171,6 +189,7 @@ void setMode(int mode) {
     //   digitalWrite(AIN2, LOW);
     //   break;
   }
+  // Serial.println("setMode");
 }
 
 // Calibration function for IMU position
@@ -212,13 +231,10 @@ void calibrateSensors() {
 // ZYX / yaw pitch roll convention
 // only returns pitch/roll because that's what we can
 // get from the acceleromter
-float *getEulerAngles(sensors_vec_t a) {
-  float *angles = malloc(sizeof(float) * 2);
-  // angles[0]  = atan2( a.y, sqrt(a.x * a.x + a.z * a.z));
-  angles[0] = atan2(a.y, a.z); //pitch
-  //angles[1] = atan2(-a.x, sqrt(a.x * a.x + a.z * a.z)); //roll
-  angles[1] = atan2(a.x, a.z);
-  return angles;
+void getEulerAngles(sensors_vec_t a) {
+  pitch = atan2(a.y, a.z); //pitch
+  roll = atan2(a.x, a.z);
+  // Serial.println("getEulerAngles");
 }
 
 // alpha-beta filter assumes constant velocity over integration time
@@ -239,17 +255,18 @@ void alphaBetaFilter(float xm, float vm, float *xk, float *vk) {
 }
 
 // alpha filter:does not use gyro velocities
-void alphaFilter(float xm, float *xk) {
-  float rk = xm - *xk;
-  *xk = *xk + alpha * rk;
+float alphaFilter(float xm, float xk) {
+  float rk = xm - xk;
+  xk = xk + alpha * rk;
   //Serial.println(*xk * 180 / pi);
+  // Serial.println("alphaFilter");
+  return xk;
 }
 
 void motorControl(int speed, int motorPIN) {
   // if (abs(speed) < 10){
   //   setMode(stop);
   // }
-
     if (speed < 0) {
     setMode(CW);
     speed = -speed;
@@ -259,6 +276,7 @@ void motorControl(int speed, int motorPIN) {
 
   analogWrite(motorPIN, speed > 255 ? 255 : speed);
   //Serial.println(speed);
+  // Serial.println("motorControl");
 }
 
 
