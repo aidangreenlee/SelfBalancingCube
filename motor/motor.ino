@@ -1,23 +1,33 @@
+#include <Wire.h>
 #include <Adafruit_MPU6050.h>
+#include <esp32-hal-ledc.h>
 
-#define PWM 13
-#define AIN2 11
-#define AIN1 9
-#define OUTA 3 //encoder A
-#define OUTB 2 //encoder B
-#define POT_KP A0
-#define POT_KI A1
-#define POT_KD A2
+
+#define PWM 16
+#define DIRECTION_PIN 17
+#define POT_KP 15
+#define POT_KI 2
+#define POT_KD 4
+#define AIN1 18 // Define these pins if not already defined
+#define AIN2 19
+
+
+const int MOTOR_FREQUENCY = 0;  // Motor speed in Hz
+
+
+// IMU functions;
+sensors_event_t a, g, temp;
+Adafruit_MPU6050 mpu;
+
 
 // define physical constants
 const float pi = 3.14159265359;
 
-enum motorMode{shortBrake,CCW,CW,stop};
+enum motorMode { shortBrake, CCW, CW, stop };
 int kp_val = 0;
 int ki_val = 0;
-int kd_val = 0; 
+int kd_val = 0;
 int speed = 0;
-int time = 0;
 
 struct calibrate {
   sensors_vec_t gyro;
@@ -26,9 +36,7 @@ struct calibrate {
 
 struct calibrate Calibration;
 
-
 // Alpha-beta filter values
-// Position and velocity are both assumed to be zero initially
 float roll = 0;
 float theta_roll;
 float pitch = 0;
@@ -37,17 +45,15 @@ float roll_dot = 0;
 float pitch_dot = 0;
 float alpha = .2;
 float beta = .1;
-const int T_int = 50;  // Integration period in ms
+const int T_int = 50; // Integration period in ms
 
-// IMU functions;
-sensors_event_t a, g, temp;
-Adafruit_MPU6050 mpu;
+
 
 // PID Parameters
-double KP = 1000; // Gains -tune later
-float KI = 0; 
+double KP = 1000; // Gains - tune later
+float KI = 0;
 float KD = 0;
-float setpoint = -0.835; // 0 degrees?
+float setpoint = -0.82;// 0 degrees?
 float integral = 0;
 float error = 0;
 float previousError = 0;
@@ -57,18 +63,22 @@ float PIDout = 0;
 int encoder_count = 1;
 
 void setup() {
-  // setup pins
-  pinMode(PWM, OUTPUT);
-  pinMode(AIN2, OUTPUT);
+
+   // Configure PWM channel
+  ledcSetup(0, MOTOR_FREQUENCY, 8);  // PWM channel 0, 8-bit resolution
+
+  // Attach PWM channel to GPIO pin
+  ledcAttachPin(PWM, 0);  // Use PWM channel 0
+
+
   pinMode(AIN1, OUTPUT);
-  pinMode(OUTA, INPUT);
-  pinMode(OUTB, INPUT);
+  pinMode(AIN2, OUTPUT);
+  pinMode(DIRECTION_PIN, OUTPUT);
   pinMode(POT_KP, INPUT);
   pinMode(POT_KI, INPUT);
   pinMode(POT_KD, INPUT);
   Serial.begin(115200);
 
-  // Initialize IMU
   if (!mpu.begin()) {
     Serial.println("Failed to find MPU6050 chip");
     while (1) {
@@ -78,76 +88,37 @@ void setup() {
   Serial.println("MPU6050 Found!");
 
   calibrateSensors();
-
-
-  //could  use encoder to correct for imu drift as a feedback mechanism
-  attachInterrupt(digitalPinToInterrupt(OUTA),encoder_func,RISING);
-
 }
 
 void loop() {
-  // Read pin values
+
   kp_val = analogRead(POT_KP);
   ki_val = analogRead(POT_KI);
   kd_val = analogRead(POT_KD);
 
-  KP = map(kp_val,0,1023,1,1000);
-  KI = map(ki_val,0,1023,0,5000);
-  KD = map(kd_val,0,1023,1,10000);
+
+  KP = map(kp_val, 0, 1023, 1, 1000);
+  KI = map(ki_val, 0, 1023, 0, 5000);
+  KD = map(kd_val, 0, 1023, 1, 100000);
+  
 
 
-  // remap alpha/beta tuning potentiometers
-  // alpha = log10(9.0 * (alphaValue / 1023.0) + 1.0);
-  //beta = log10(9.0 * (betaValue / 1023.0) + 1.0);
+  //Serial.println(KI);
+  // Serial.println(KI);
+  // Serial.println(KD);
+
 
   getAngles();
- 
 
-   // Calculate PID output
-  error = setpoint - roll; // Calculate error between setpoint and pitch
-  if (abs(error) <= 0.087){ // set 5 degree dead zone for wheel to mitigate effects of gear backlash
-    error = 0;
-    speed = 0;
-    Serial.println("zero error");
-  }else{
-  //Serial.println(error); 
-  previousError = error; // Save error for next iteration
-  // integral += error * T_int; // Update integral
- // integral = constrain(integral,-100,100);
-  // float derivative = (error - previousError) / T_int; // Calculate derivative
+  error = setpoint - roll;
+  
+  previousError = error;
   derivative = g.gyro.y;
-  PIDout = KP * error + KI * integral + KD * derivative; // Calculate PID output
-  // Serial.print("error:");
-  // Serial.print(error);
-  // Serial.print(" KP:");
-  // Serial.print(KP);
-  // Serial.print(" output:");
-  // Serial.print(output);
+  PIDout = KP * error + KI * integral + KD * derivative;
+  speed = constrain(PIDout, -255, 255);
 
-  // set motor speed using the PID output
-  speed = constrain(PIDout, -255, 255); // Ensure speed is within limits
-  // Serial.print(" speed:");
-  // Serial.print(speed);
-  // Serial.print("-2 2 ");
-  // Serial.print(alpha);
-  // Serial.print(" ");
-  // Serial.print(theta_k[0]);
-  // Serial.print(" ");
-  // Serial.println(theta_k[1]); 
-  }
 
   motorControl(speed, PWM);
-
-
-
-  // set motor speed using the filtered output 
-  // TODO: implement PID control
-  // speed = round(theta_k[0] / (pi / 4) * 255.0);
-  // speed = constrain(speed, -255, 255);
-  // motorControl(speed, PWM);
-
-  // Serial.println(" ");
-  // Serial.println("loop");
 }
 
 void getAngles(){
@@ -170,19 +141,18 @@ void getAngles(){
 }
 
 // Function to set motor direction based on enum
-void setMode(int mode) {
+void setMode(int mode) {  
+
   switch (mode) {
     case shortBrake:
       digitalWrite(AIN1, HIGH);
       digitalWrite(AIN2, HIGH);
       break;
     case CCW:
-      digitalWrite(AIN1, LOW);
-      digitalWrite(AIN2, HIGH);
+      digitalWrite(DIRECTION_PIN, LOW);
       break;
     case CW:
-      digitalWrite(AIN1, HIGH);
-      digitalWrite(AIN2, LOW);
+      digitalWrite(DIRECTION_PIN, HIGH);
       break;
     // case stop:
     //   digitalWrite(AIN1, LOW);
@@ -267,29 +237,18 @@ void motorControl(int speed, int motorPIN) {
   // if (abs(speed) < 10){
   //   setMode(stop);
   // }
+  
+
     if (speed < 0) {
-    setMode(CW);
+    setMode(CCW);
     speed = -speed;
   } else {
-    setMode(CCW);
+    setMode(CW);
   }
+  Serial.println(speed);
+  ledcWriteTone(0,speed);
 
-  analogWrite(motorPIN, speed > 255 ? 255 : speed);
+  //analogWrite(motorPIN, speed > 255 ? 255 : speed);
   //Serial.println(speed);
   // Serial.println("motorControl");
-}
-
-
-void encoder_func() {
-
-//If encoder A > encoder B, increment. 
-//This function is called on rising edge of A, so increment rising and decrement falling
-
-if (digitalRead(OUTA) > digitalRead(OUTB)) { 
-  encoder_count++;
-}
-else{
-    encoder_count--;
-  }
-
 }
