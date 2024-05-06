@@ -4,6 +4,7 @@
 #include <esp32-hal-ledc.h>
 #include <esp_now.h>
 #include <WiFi.h>
+#include "RGB.h"
 
 #define CHANNEL 0
 #define BRAKE 27
@@ -20,6 +21,10 @@
 #define DIR1 12
 #define PWM1 14
 #define PWM1_CH 1
+
+#define BLUE 1
+#define RED 5
+#define GREEN 15
 
 
 const int SpeakerPin = 4;  // 16 corresponds to GPIO4
@@ -85,6 +90,8 @@ int time_ = 0;
 int prevTime = 0;
 int time_delta = 0;
 
+bool DISCOMODE = false;
+
 unsigned long balancingStartTime;
 
 void pwmSet(uint8_t channel, uint32_t value) {
@@ -137,7 +144,13 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len) {
 
 void setup() {
 
+  pinMode(RED, OUTPUT);
+  pinMode(GREEN, OUTPUT);
+  pinMode(BLUE, OUTPUT);
 
+  analogWrite(RED, 255);
+  analogWrite(GREEN, 255);
+  analogWrite(BLUE, 255);
 
   // For Speaker
     // configure LED PWM functionalitites
@@ -195,6 +208,7 @@ void setup() {
   }
 
   esp_now_register_recv_cb(OnDataRecv);
+
 }
 
 void loop() {
@@ -259,6 +273,10 @@ void loop() {
   motorControl(speed, PWM1_CH);
   //delay(100);
   motorControl(speed, PWM2_CH);
+
+  if (DISCOMODE){
+    Disco();
+  }
 
   delay(10);
   // Serial.println("");
@@ -345,10 +363,53 @@ void motorControl(int speed, int motorPIN) {
     setMode(CCW);
   }
   pwmSet(motorPIN, speed > 255 ? 255 : 255 - speed);
-
+  speed2RGB(speed);
 }
 
+void Disco(){
+  int r, g, b;
+  motorControl(15, PWM2_CH);
 
+  while (DISCOMODE){
+
+      // fade from blue to violet
+      for (r = 0; r < 256; r++) { 
+        analogWrite(RED, r);
+        delay(2);
+      } 
+      // fade from violet to red
+      for (b = 255; b > 0; b--) { 
+        analogWrite(BLUE, b);
+        delay(2);
+      } 
+      // fade from red to yellow
+      for (g = 0; g < 256; g++) { 
+        analogWrite(GREEN, g);
+        delay(2);
+      } 
+      // fade from yellow to green
+      for (r = 255; r > 0; r--) { 
+        analogWrite(BLUE, r);
+        delay(2);
+      } 
+      // fade from green to teal
+      for (b = 0; b < 256; b++) { 
+        analogWrite(BLUE, b);
+        delay(2);
+      } 
+      // fade from teal to blue
+      for (g = 255; g > 0; g--) { 
+        analogWrite(GREEN, g);
+        delay(2);
+      }
+  }
+}
+
+void speed2RGB(int speed){
+  analogWrite(RED, RGB_LUT[speed]);
+  analogWrite(GREEN, RGB_LUT[speed * 3 + 1]);
+  analogWrite(BLUE, RGB_LUT[speed * 3 + 2]);
+}
 /// Unused Code
 // void alphaBetaFilter(float xm, float vm, float *xk, float *vk) {
 //   float xk_next = *xk + (*vk * T_int);
