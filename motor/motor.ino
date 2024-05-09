@@ -133,11 +133,27 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int len) {
     sscanf((char *)data, "DT=%f", &ditherAngle);
     Serial.print("Received DT: ");
     Serial.println(ditherAngle);
-  } else if (strncmp(identifier, "STP", 4) == 0) {
+  } else if (strncmp(identifier, "STP", 3) == 0) {
     Serial.println("Stopping Motors: KP = KI = KD = 0");
     KP = 0;
     KI = 0;
     KD = 0;
+    Serial.print("Setpoint: ");
+    Serial.println(SETPOINT);
+  } else if (strncmp(identifier, "DIS", 3) == 0){
+    if (DISCOMODE){
+      Serial.println("Deactivating Party");
+      DISCOMODE = false;
+    } else {
+      Serial.println("Activating Party");
+      DISCOMODE = true;
+    }
+  } else if (strncmp(identifier, "SP=", 3) == 0){
+    Serial.print("Changing setpoint: ");
+    sscanf((char*)data, "SP=%f", &SETPOINT);
+    Serial.println(SETPOINT);
+    // Serial.println(*data);
+    setpoint = SETPOINT;
   }
    
 }
@@ -363,12 +379,12 @@ void motorControl(int speed, int motorPIN) {
     setMode(CCW);
   }
   pwmSet(motorPIN, speed > 255 ? 255 : 255 - speed);
-  speed2RGB(speed);
+  // speed2RGB(speed);
 }
 
 void Disco(){
   int r, g, b;
-  motorControl(15, PWM2_CH);
+  motorControl(10, PWM2_CH);
 
   while (DISCOMODE){
 
